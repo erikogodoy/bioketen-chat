@@ -6,6 +6,7 @@ app.use(express.json());
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
+const INSTAGRAM_TOKEN = process.env.INSTAGRAM_TOKEN;
 
 const conversations = {};
 
@@ -30,7 +31,6 @@ CÓMO RECOMENDAR:
 - Si sabe qué flores tiene su miel → recomienda qPCR.
 - Si no sabe qué flores tiene → recomienda Screening PCR.
 - Recomienda solo uno a la vez, nunca los dos juntos.
-- Nunca preguntes por la zona del apiario.
 
 ENVÍO DE MUESTRA:
 - Mínimo 250g de miel en frasco cerrado.
@@ -43,16 +43,16 @@ Cuando alguien diga "sí", "ya", "dale", "me interesa" o confirme que quiere env
 
 Contacto: contacto@bioketen.com / +56 9 99174426`;
 
-async function sendMessage(recipientId, text) {
+async function sendMessage(recipientId, text, token) {
   try {
     await axios.post(
-      `https://graph.facebook.com/v18.0/me/messages`,
+      'https://graph.facebook.com/v18.0/me/messages',
       {
         recipient: { id: recipientId },
         message: { text }
       },
       {
-        params: { access_token: PAGE_ACCESS_TOKEN }
+        params: { access_token: token }
       }
     );
   } catch (error) {
@@ -64,7 +64,7 @@ async function getClaudeResponse(userId, userMessage) {
   if (!conversations[userId]) {
     conversations[userId] = [];
   }
-  
+
   conversations[userId].push({
     role: 'user',
     content: userMessage
@@ -92,7 +92,7 @@ async function getClaudeResponse(userId, userMessage) {
   );
 
   const assistantMessage = response.data.content[0].text;
-  
+
   conversations[userId].push({
     role: 'assistant',
     content: assistantMessage
@@ -111,25 +111,27 @@ app.get('/webhook', (req, res) => {
 
 app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
-  
+
   const body = req.body;
-  if (body.object !== 'page') return;
+  if (body.object !== 'page' && body.object !== 'instagram') return;
 
   for (const entry of body.entry) {
     const messages = entry.messaging;
     if (!messages) continue;
-    
+
     for (const event of messages) {
       if (!event.message || event.message.is_echo) continue;
-      
+
       const senderId = event.sender.id;
       const messageText = event.message.text;
-      
+
       if (!messageText) continue;
+
+      const token = body.object === 'instagram' ? INSTAGRAM_TOKEN : PAGE_ACCESS_TOKEN;
 
       try {
         const reply = await getClaudeResponse(senderId, messageText);
-        await sendMessage(senderId, reply);
+        await sendMessage(senderId, reply, token);
       } catch (error) {
         console.error('Error:', error);
       }
